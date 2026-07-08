@@ -26,6 +26,7 @@
   let homeFeedResults = [];
   let homeFeedLabel = "";
   let homeMode = "trending";
+  let homeRequestId = 0;
   let wlFavOnly = false, wdFavOnly = false;
   let searchDebounce = null;
   let openListId = null;
@@ -268,6 +269,17 @@
     { label: "1990 - 1999", value: "1990-1999" },
     { label: "Before 1990", value: "before-1990" }
   ];
+
+  const DEFAULT_HOME_TITLES = [
+    "Inception",
+    "The Dark Knight",
+    "Interstellar",
+    "The Shawshank Redemption",
+    "Forrest Gump",
+    "Fight Club",
+    "Pulp Fiction",
+    "The Matrix"
+  ];
   
   let yearFilterValue = "all";
 
@@ -367,24 +379,17 @@
 
     const sections = [];
 
-    if(homeMode === "search" && feedCount){
+    if(feedCount){
       sections.push(`
         <div class="trending-block">
           <h4 class="trending-heading">${escapeHtml(homeFeedLabel || "Feed")}</h4>
           <div class="grid">${homeFeedResults.map(searchCard).join("")}</div>
         </div>
       `);
-    } else if(homeMode !== "search" && feedCount){
-      sections.push(`
-        <div class="trending-block">
-          <h4 class="trending-heading">${escapeHtml(homeFeedLabel || queryTitle)}</h4>
-          <div class="grid">${homeFeedResults.map(searchCard).join("")}</div>
-        </div>
-      `);
     }
 
-    if(queryCount){
-      const blockTitle = homeMode === "search" ? queryTitle : (homeFeedLabel || queryTitle);
+    if(homeMode === "search" && queryCount){
+      const blockTitle = queryTitle;
       sections.push(`
         <div class="trending-block">
           <h4 class="trending-heading">${escapeHtml(blockTitle)}</h4>
@@ -442,14 +447,7 @@
   }
 
   async function renderTrendingHome(){
-    homeMode = "trending";
-    homeFeedResults = [];
-    homeFeedLabel = "";
-    currentResults = [];
-    document.getElementById("results-title").textContent = "Trending";
-    document.getElementById("home-results").innerHTML = spinnerBlock("Finding movies...");
-    document.getElementById("results-tally").textContent = "";
-    renderStats();
+    return browseCategory(DEFAULT_HOME_TITLES, "Featured Picks");
   }
 
   function renderWatchlist(){
@@ -513,10 +511,12 @@
     if(!query){
       return;
     }
+    const requestId = ++homeRequestId;
     homeMode = "search";
     document.getElementById("home-results").innerHTML = spinnerBlock("Searching...");
     try{
       const res = await omdbSearch(query);
+      if(requestId !== homeRequestId) return;
       currentResults = (res.Search || []).map(m => ({...m, addedAt: Date.now()}));
       document.getElementById("results-title").textContent = `Results for "${escapeHtml(query)}"`;
       document.getElementById("results-tally").textContent = currentResults.length ? `${currentResults.length} title${currentResults.length === 1 ? "" : "s"}` : "";
@@ -677,6 +677,7 @@
   });
 
   async function browseCategory(titles, label){
+    const requestId = ++homeRequestId;
     const resultsEl = document.getElementById("home-results");
     document.getElementById("search-input").value = "";
     suggestBox.classList.remove("show");
@@ -690,6 +691,7 @@
         try{ const d = await omdbDetails2ByTitle(t); return d && d.Response !== "False" ? d : null; }
         catch(e){ return null; }
       }));
+      if(requestId !== homeRequestId) return;
       currentResults = settled.filter(Boolean);
       homeFeedResults = currentResults;
       if(!currentResults.length){
