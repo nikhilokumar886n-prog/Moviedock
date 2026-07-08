@@ -60,7 +60,7 @@
 
   async function omdbSearch(query, {type, year, page} = {}){
     try {
-      const params = new URLSearchParams({ s: query });
+      const params = new URLSearchParams({ query });
       if(type) params.set("type", type);
       if(year) params.set("y", year);
       if(page) params.set("page", page);
@@ -111,12 +111,11 @@
 
   /* ============ API KEY MODAL ============ */
   const keyModal = document.getElementById("key-modal");
-  function showKeyModal(prefill){
-    document.getElementById("api-key-input").value = prefill || "";
+  function showKeyModal(){
     keyModal.classList.add("show");
   }
   function hideKeyModal(){ keyModal.classList.remove("show"); }
-  document.getElementById("key-btn").addEventListener("click", () => showKeyModal("(Managed by Backend)"));
+  document.getElementById("key-btn").addEventListener("click", showKeyModal);
 
   /* ============ EXPORT / IMPORT ============ */
   document.getElementById("export-btn").addEventListener("click", () => {
@@ -180,13 +179,7 @@
     reader.readAsText(file);
   });
 
-  document.getElementById("save-key-btn").addEventListener("click", () => {
-    hideKeyModal();
-    alert("API Key is managed by the backend.");
-  });
-  document.getElementById("api-key-input").addEventListener("keydown", e => {
-    if(e.key === "Enter") hideKeyModal();
-  });
+  document.getElementById("save-key-btn").addEventListener("click", hideKeyModal);
 
   /* ============ TABS / NAVIGATION ============ */
   const views = { 

@@ -9,23 +9,25 @@ app.use(cors());
 app.use(express.json());
 
 // OMDB API Key (stored in backend)
-const OMDB_API_KEY = 'a5712ecb';
+const OMDB_API_KEY = process.env.OMDB_API_KEY || 'a5712ecb';
 const OMDB_BASE = 'https://www.omdbapi.com/';
 
 // OMDB Search Endpoint
 app.get('/api/omdb/search', async (req, res) => {
   try {
-    const { query, type, year, page } = req.query;
+    const { query, s, type, year, y, page } = req.query;
+    const searchQuery = query || s;
     
-    if (!query) {
+    if (!searchQuery) {
       return res.status(400).json({ error: 'Query is required' });
     }
 
     const params = new URLSearchParams({
       apikey: OMDB_API_KEY,
-      s: query,
+      s: searchQuery,
       ...(type && { type }),
       ...(year && { y: year }),
+      ...(y && { y }),
       ...(page && { page })
     });
 
