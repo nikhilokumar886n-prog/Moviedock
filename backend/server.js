@@ -110,11 +110,11 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'Backend is running' });
 });
 
-// Serve the root site from the backend so the UI and API share one origin
-app.use(express.static(path.join(__dirname, '..')));
+// Serve the frontend files from the backend so the UI and API share one origin
+app.use(express.static(path.join(__dirname, '..', 'frontend')));
 
 app.get('/', (req, res) => {
-  res.sendFile(path.join(__dirname, '..', 'index.html'));
+  res.sendFile(path.join(__dirname, '..', 'frontend', 'index.html'));
 });
 
 const PORT = process.env.PORT || 5000;
