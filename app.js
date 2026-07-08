@@ -60,11 +60,18 @@
   }
 
   /* ============ API ============ */
-  const BACKEND_BASE = "http://localhost:5000/api";
+  const APP_ORIGIN = window.location.origin && window.location.origin !== "null" ? window.location.origin : "http://localhost:5000";
+  const BACKEND_BASE = `${APP_ORIGIN}/api`;
+
+  function omdbQueryParams(baseParams = {}){
+    const params = new URLSearchParams(baseParams);
+    if(store.apiKey) params.set("apikey", store.apiKey);
+    return params;
+  }
 
   async function omdbSearch(query, {type, year, page} = {}){
     try {
-      const params = new URLSearchParams({ query });
+      const params = omdbQueryParams({ query });
       if(type) params.set("type", type);
       if(year) params.set("y", year);
       if(page) params.set("page", page);
@@ -80,7 +87,8 @@
 
   async function omdbDetails(imdbID){
     try {
-      const res = await fetch(`${BACKEND_BASE}/omdb/details/${imdbID}`);
+      const params = omdbQueryParams();
+      const res = await fetch(`${BACKEND_BASE}/omdb/details/${imdbID}?${params.toString()}`);
       if (!res.ok) throw new Error(`API error: ${res.status}`);
       return res.json();
     } catch (error) {
@@ -91,7 +99,7 @@
 
   async function omdbDetails2ByTitle(title){
     try {
-      const params = new URLSearchParams({ title });
+      const params = omdbQueryParams({ title });
       const res = await fetch(`${BACKEND_BASE}/omdb/title?${params.toString()}`);
       if (!res.ok) throw new Error(`API error: ${res.status}`);
       return res.json();
@@ -115,8 +123,11 @@
 
   /* ============ API KEY MODAL ============ */
   const keyModal = document.getElementById("key-modal");
+  const apiKeyInput = document.getElementById("api-key-input");
   function showKeyModal(){
+    apiKeyInput.value = store.apiKey || "";
     keyModal.classList.add("show");
+    setTimeout(() => apiKeyInput.focus(), 0);
   }
   function hideKeyModal(){ keyModal.classList.remove("show"); }
   document.getElementById("key-btn").addEventListener("click", showKeyModal);
@@ -183,7 +194,13 @@
     reader.readAsText(file);
   });
 
-  document.getElementById("save-key-btn").addEventListener("click", hideKeyModal);
+  document.getElementById("save-key-btn").addEventListener("click", () => {
+    store.apiKey = apiKeyInput.value.trim();
+    hideKeyModal();
+  });
+  apiKeyInput.addEventListener("keydown", e => {
+    if(e.key === "Enter") document.getElementById("save-key-btn").click();
+  });
 
   /* ============ TABS / NAVIGATION ============ */
   const views = { 

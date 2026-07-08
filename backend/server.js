@@ -1,5 +1,6 @@
 const express = require('express');
 const cors = require('cors');
+const path = require('path');
 require('dotenv').config();
 
 const app = express();
@@ -18,15 +19,20 @@ const OMDB_BASE = 'https://www.omdbapi.com/';
 // OMDB Search Endpoint
 app.get('/api/omdb/search', async (req, res) => {
   try {
-    const { query, s, type, year, y, page } = req.query;
+    const { query, s, type, year, y, page, apikey } = req.query;
     const searchQuery = query || s;
+    const activeKey = apikey || OMDB_API_KEY;
     
     if (!searchQuery) {
       return res.status(400).json({ error: 'Query is required' });
     }
 
+    if (!activeKey) {
+      return res.status(500).json({ error: 'OMDB_API_KEY is required' });
+    }
+
     const params = new URLSearchParams({
-      apikey: OMDB_API_KEY,
+      apikey: activeKey,
       s: searchQuery,
       ...(type && { type }),
       ...(year && { y: year }),
@@ -46,13 +52,19 @@ app.get('/api/omdb/search', async (req, res) => {
 app.get('/api/omdb/details/:imdbID', async (req, res) => {
   try {
     const { imdbID } = req.params;
+    const { apikey } = req.query;
+    const activeKey = apikey || OMDB_API_KEY;
     
     if (!imdbID) {
       return res.status(400).json({ error: 'IMDb ID is required' });
     }
 
+    if (!activeKey) {
+      return res.status(500).json({ error: 'OMDB_API_KEY is required' });
+    }
+
     const params = new URLSearchParams({
-      apikey: OMDB_API_KEY,
+      apikey: activeKey,
       i: imdbID,
       plot: 'full'
     });
@@ -68,14 +80,19 @@ app.get('/api/omdb/details/:imdbID', async (req, res) => {
 // OMDB Details by Title Endpoint
 app.get('/api/omdb/title', async (req, res) => {
   try {
-    const { title } = req.query;
+    const { title, apikey } = req.query;
+    const activeKey = apikey || OMDB_API_KEY;
     
     if (!title) {
       return res.status(400).json({ error: 'Title is required' });
     }
 
+    if (!activeKey) {
+      return res.status(500).json({ error: 'OMDB_API_KEY is required' });
+    }
+
     const params = new URLSearchParams({
-      apikey: OMDB_API_KEY,
+      apikey: activeKey,
       t: title,
       plot: 'full'
     });
@@ -91,6 +108,13 @@ app.get('/api/omdb/title', async (req, res) => {
 // Health check
 app.get('/api/health', (req, res) => {
   res.json({ status: 'Backend is running' });
+});
+
+// Serve the root site from the backend so the UI and API share one origin
+app.use(express.static(path.join(__dirname, '..')));
+
+app.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, '..', 'index.html'));
 });
 
 const PORT = process.env.PORT || 5000;

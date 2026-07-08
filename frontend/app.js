@@ -53,7 +53,8 @@
   }
 
   /* ============ BACKEND API ============ */
-  const BACKEND_BASE = "http://localhost:5000/api";
+  const APP_ORIGIN = window.location.origin && window.location.origin !== "null" ? window.location.origin : "http://localhost:5000";
+  const BACKEND_BASE = `${APP_ORIGIN}/api`;
 
   async function omdbSearch(query, {type, year, page} = {}){
     try {
