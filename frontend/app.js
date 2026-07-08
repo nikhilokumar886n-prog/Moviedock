@@ -133,6 +133,49 @@
     ];
   }
 
+  function getCuratedTitlePool(){
+    return [...new Set([
+      ...Object.values(MOVIE_GENRES).flat(),
+      ...Object.values(SERIES_GENRES).flat(),
+      ...Object.values(MOVIE_INDUSTRIES).flat()
+    ])];
+  }
+
+  function titleSearchKeys(title){
+    const rawTokens = String(title || "").toLowerCase().match(/[a-z0-9]+/g) || [];
+    const tokens = rawTokens.filter(token => !["the", "a", "an", "and", "of", "to", "in", "for", "on"].includes(token));
+    const compact = normalizeSearchKey(title);
+    const joinedTokens = normalizeSearchKey(tokens.join(""));
+    const acronym = normalizeSearchKey(tokens.map(token => token[0]).join(""));
+    const firstToken = normalizeSearchKey(tokens[0] || rawTokens[0] || "");
+    return [...new Set([compact, joinedTokens, acronym, firstToken].filter(Boolean))];
+  }
+
+  function scoreTitleMatch(query, title){
+    const normalizedQuery = normalizeSearchKey(query);
+    if(!normalizedQuery) return Infinity;
+    let best = Infinity;
+    for(const key of titleSearchKeys(title)){
+      if(key.includes(normalizedQuery) || normalizedQuery.includes(key)){
+        return 0;
+      }
+      best = Math.min(best, editDistance(normalizedQuery, key));
+    }
+    return best;
+  }
+
+  function findCuratedTitleMatches(query, limit = 6){
+    const normalizedQuery = normalizeSearchKey(query);
+    if(!normalizedQuery) return [];
+    const maxDistance = Math.max(1, Math.min(3, Math.ceil(normalizedQuery.length / 3)));
+    return getCuratedTitlePool()
+      .map(title => ({ title, score: scoreTitleMatch(normalizedQuery, title) }))
+      .filter(entry => entry.score <= maxDistance)
+      .sort((a, b) => a.score - b.score || a.title.length - b.title.length || a.title.localeCompare(b.title))
+      .slice(0, limit)
+      .map(entry => entry.title);
+  }
+
   /* ============ THEME ============ */
   function initTheme(){
     const saved = localStorage.getItem(LS_THEME) || "dark";
@@ -506,6 +549,12 @@
         currentResults = results;
         document.getElementById("results-title").textContent = `Results for "${query}"`;
         renderHomeGrid();
+        return;
+      }
+
+      const fuzzyTitles = findCuratedTitleMatches(query);
+      if(fuzzyTitles.length){
+        await browseCategory(fuzzyTitles, `Did you mean "${query}"?`);
         return;
       }
 
