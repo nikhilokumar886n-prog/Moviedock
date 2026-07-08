@@ -56,28 +56,45 @@
   }
 
   /* ============ API ============ */
-  const OMDB_BASE = "https://www.omdbapi.com/";
+  const BACKEND_BASE = "http://localhost:5000/api";
 
   async function omdbSearch(query, {type, year, page} = {}){
-    const params = new URLSearchParams({ apikey: store.apiKey, s: query });
-    if(type) params.set("type", type);
-    if(year) params.set("y", year);
-    if(page) params.set("page", page);
-    const res = await fetch(OMDB_BASE + "?" + params.toString());
-    const data = await res.json();
-    return data;
+    try {
+      const params = new URLSearchParams({ s: query });
+      if(type) params.set("type", type);
+      if(year) params.set("y", year);
+      if(page) params.set("page", page);
+      const res = await fetch(`${BACKEND_BASE}/omdb/search?${params.toString()}`);
+      if (!res.ok) throw new Error(`API error: ${res.status}`);
+      const data = await res.json();
+      return data;
+    } catch (error) {
+      console.error("Search error:", error);
+      return { Response: "False", Error: error.message };
+    }
   }
 
   async function omdbDetails(imdbID){
-    const params = new URLSearchParams({ apikey: store.apiKey, i: imdbID, plot: "full" });
-    const res = await fetch(OMDB_BASE + "?" + params.toString());
-    return res.json();
+    try {
+      const res = await fetch(`${BACKEND_BASE}/omdb/details/${imdbID}`);
+      if (!res.ok) throw new Error(`API error: ${res.status}`);
+      return res.json();
+    } catch (error) {
+      console.error("Details error:", error);
+      return { Response: "False", Error: error.message };
+    }
   }
 
   async function omdbDetails2ByTitle(title){
-    const params = new URLSearchParams({ apikey: store.apiKey, t: title, plot: "full" });
-    const res = await fetch(OMDB_BASE + "?" + params.toString());
-    return res.json();
+    try {
+      const params = new URLSearchParams({ title });
+      const res = await fetch(`${BACKEND_BASE}/omdb/title?${params.toString()}`);
+      if (!res.ok) throw new Error(`API error: ${res.status}`);
+      return res.json();
+    } catch (error) {
+      console.error("Title search error:", error);
+      return { Response: "False", Error: error.message };
+    }
   }
 
   /* ============ THEME ============ */
@@ -99,7 +116,7 @@
     keyModal.classList.add("show");
   }
   function hideKeyModal(){ keyModal.classList.remove("show"); }
-  document.getElementById("key-btn").addEventListener("click", () => showKeyModal(store.apiKey));
+  document.getElementById("key-btn").addEventListener("click", () => showKeyModal("(Managed by Backend)"));
 
   /* ============ EXPORT / IMPORT ============ */
   document.getElementById("export-btn").addEventListener("click", () => {
@@ -164,15 +181,11 @@
   });
 
   document.getElementById("save-key-btn").addEventListener("click", () => {
-    const val = document.getElementById("api-key-input").value.trim();
-    if(!val){ return; }
-    store.apiKey = val;
     hideKeyModal();
-    const activeView = document.querySelector(".tab-btn.active").dataset.view;
-    if(activeView === "home" && !currentResults.length) renderTrendingHome();
+    alert("API Key is managed by the backend.");
   });
   document.getElementById("api-key-input").addEventListener("keydown", e => {
-    if(e.key === "Enter") document.getElementById("save-key-btn").click();
+    if(e.key === "Enter") hideKeyModal();
   });
 
   /* ============ TABS / NAVIGATION ============ */
@@ -389,11 +402,6 @@
   }
 
   async function renderTrendingHome(){
-    if(!store.apiKey){
-      document.getElementById("key-modal").classList.add("show");
-      document.getElementById("home-results").innerHTML = emptyBlock("Connect an API key", "Add your OMDb API key to get started.", true);
-      return;
-    }
     document.getElementById("results-title").textContent = "Trending";
     document.getElementById("home-results").innerHTML = spinnerBlock("Finding movies...");
     renderStats();
@@ -457,8 +465,7 @@
   const suggestBox = document.getElementById("suggestions");
   document.getElementById("search-btn").addEventListener("click", async () => {
     const query = document.getElementById("search-input").value.trim();
-    if(!query || !store.apiKey){
-      if(!store.apiKey) showKeyModal();
+    if(!query){
       return;
     }
     document.getElementById("home-results").innerHTML = spinnerBlock("Searching...");
@@ -629,7 +636,6 @@
     document.getElementById("results-title").textContent = label;
     document.getElementById("results-tally").textContent = "";
     resultsEl.innerHTML = spinnerBlock("Loading...");
-    if(!store.apiKey){ showKeyModal(); resultsEl.innerHTML = emptyBlock("Connect an API key", "Add your OMDb API key to browse.", true); return; }
     try{
       const settled = await Promise.all(titles.map(async t => {
         try{ const d = await omdbDetails2ByTitle(t); return d && d.Response !== "False" ? d : null; }
