@@ -95,6 +95,44 @@
     }
   }
 
+  function normalizeSearchKey(value){
+    return String(value || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+  }
+
+  function editDistance(a, b){
+    const left = normalizeSearchKey(a);
+    const right = normalizeSearchKey(b);
+    const rows = Array.from({ length: left.length + 1 }, (_, i) => [i]);
+    for(let j = 1; j <= right.length; j++) rows[0][j] = j;
+    for(let i = 1; i <= left.length; i++){
+      rows[i] = [i];
+      for(let j = 1; j <= right.length; j++){
+        const cost = left[i - 1] === right[j - 1] ? 0 : 1;
+        rows[i][j] = Math.min(
+          rows[i - 1][j] + 1,
+          rows[i][j - 1] + 1,
+          rows[i - 1][j - 1] + cost
+        );
+      }
+    }
+    return rows[left.length][right.length];
+  }
+
+  function isGenericMovieQuery(query){
+    const normalized = normalizeSearchKey(query);
+    if(!normalized) return false;
+    if(["movie", "movies", "film", "films", "cinema"].includes(normalized)) return true;
+    return editDistance(normalized, "movie") <= 2 || editDistance(normalized, "movies") <= 2;
+  }
+
+  function getFallbackMovieTitles(){
+    return [
+      ...MOVIE_INDUSTRIES.Hollywood,
+      ...MOVIE_GENRES.Action.slice(0, 3),
+      ...MOVIE_GENRES.Drama.slice(0, 3)
+    ];
+  }
+
   /* ============ THEME ============ */
   function initTheme(){
     const saved = localStorage.getItem(LS_THEME) || "dark";
@@ -463,9 +501,22 @@
     document.getElementById("home-results").innerHTML = spinnerBlock("Searching...");
     try{
       const res = await omdbSearch(query);
-      currentResults = (res.Search || []).map(m => ({...m, addedAt: Date.now()}));
-      document.getElementById("results-title").textContent = `Results for "${escapeHtml(query)}"`;
-      renderHomeGrid();
+      const results = (res.Search || []).map(m => ({...m, addedAt: Date.now()}));
+      if(results.length){
+        currentResults = results;
+        document.getElementById("results-title").textContent = `Results for "${query}"`;
+        renderHomeGrid();
+        return;
+      }
+
+      if(isGenericMovieQuery(query)){
+        await browseCategory(getFallbackMovieTitles(), `Popular movies for "${query}"`);
+        return;
+      }
+
+      currentResults = [];
+      document.getElementById("results-title").textContent = `Results for "${query}"`;
+      document.getElementById("home-results").innerHTML = emptyBlock("No results", "Try a different title or use the genre buttons below.", true);
     }catch(e){
       document.getElementById("home-results").innerHTML = emptyBlock("Search failed", "Please try again.", true);
     }
