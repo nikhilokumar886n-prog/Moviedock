@@ -9,7 +9,10 @@ app.use(cors());
 app.use(express.json());
 
 // OMDB API Key (stored in backend)
-const OMDB_API_KEY = process.env.OMDB_API_KEY || 'a5712ecb';
+const OMDB_API_KEY = process.env.OMDB_API_KEY;
+if (!OMDB_API_KEY) {
+  throw new Error('OMDB_API_KEY is required in backend/.env');
+}
 const OMDB_BASE = 'https://www.omdbapi.com/';
 
 // OMDB Search Endpoint

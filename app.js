@@ -23,6 +23,9 @@
   };
 
   let currentResults = [];
+  let homeFeedResults = [];
+  let homeFeedLabel = "";
+  let homeMode = "trending";
   let wlFavOnly = false, wdFavOnly = false;
   let searchDebounce = null;
   let openListId = null;
@@ -356,6 +359,50 @@
     document.getElementById("stats-strip").innerHTML = html;
   }
 
+  function renderHomeGrid(){
+    const resultsEl = document.getElementById("home-results");
+    const queryTitle = document.getElementById("results-title").textContent || "Results";
+    const queryCount = currentResults.length;
+    const feedCount = homeFeedResults.length;
+
+    const sections = [];
+
+    if(homeMode === "search" && feedCount){
+      sections.push(`
+        <div class="trending-block">
+          <h4 class="trending-heading">${escapeHtml(homeFeedLabel || "Feed")}</h4>
+          <div class="grid">${homeFeedResults.map(searchCard).join("")}</div>
+        </div>
+      `);
+    } else if(homeMode !== "search" && feedCount){
+      sections.push(`
+        <div class="trending-block">
+          <h4 class="trending-heading">${escapeHtml(homeFeedLabel || queryTitle)}</h4>
+          <div class="grid">${homeFeedResults.map(searchCard).join("")}</div>
+        </div>
+      `);
+    }
+
+    if(queryCount){
+      const blockTitle = homeMode === "search" ? queryTitle : (homeFeedLabel || queryTitle);
+      sections.push(`
+        <div class="trending-block">
+          <h4 class="trending-heading">${escapeHtml(blockTitle)}</h4>
+          <div class="grid">${currentResults.map(searchCard).join("")}</div>
+        </div>
+      `);
+    }
+
+    if(!sections.length){
+      resultsEl.innerHTML = emptyBlock("Search or browse to start", "Use the search bar or pick a category to populate the feed.", true);
+      document.getElementById("results-tally").textContent = "";
+      return;
+    }
+
+    document.getElementById("results-tally").textContent = queryCount ? `${queryCount} title${queryCount === 1 ? "" : "s"}` : "";
+    resultsEl.innerHTML = sections.join("");
+  }
+
   function searchCard(movie){
     const poster = safePoster(movie.Poster);
     const isFav = isFavorite(movie.imdbID);
@@ -395,8 +442,13 @@
   }
 
   async function renderTrendingHome(){
+    homeMode = "trending";
+    homeFeedResults = [];
+    homeFeedLabel = "";
+    currentResults = [];
     document.getElementById("results-title").textContent = "Trending";
     document.getElementById("home-results").innerHTML = spinnerBlock("Finding movies...");
+    document.getElementById("results-tally").textContent = "";
     renderStats();
   }
 
@@ -461,11 +513,13 @@
     if(!query){
       return;
     }
+    homeMode = "search";
     document.getElementById("home-results").innerHTML = spinnerBlock("Searching...");
     try{
       const res = await omdbSearch(query);
       currentResults = (res.Search || []).map(m => ({...m, addedAt: Date.now()}));
       document.getElementById("results-title").textContent = `Results for "${escapeHtml(query)}"`;
+      document.getElementById("results-tally").textContent = currentResults.length ? `${currentResults.length} title${currentResults.length === 1 ? "" : "s"}` : "";
       renderHomeGrid();
     }catch(e){
       document.getElementById("home-results").innerHTML = emptyBlock("Search failed", "Please try again.", true);
@@ -626,6 +680,8 @@
     const resultsEl = document.getElementById("home-results");
     document.getElementById("search-input").value = "";
     suggestBox.classList.remove("show");
+    homeMode = "browse";
+    homeFeedLabel = label;
     document.getElementById("results-title").textContent = label;
     document.getElementById("results-tally").textContent = "";
     resultsEl.innerHTML = spinnerBlock("Loading...");
@@ -635,6 +691,7 @@
         catch(e){ return null; }
       }));
       currentResults = settled.filter(Boolean);
+      homeFeedResults = currentResults;
       if(!currentResults.length){
         resultsEl.innerHTML = emptyBlock("No results", "Try a different category.", true);
         return;
