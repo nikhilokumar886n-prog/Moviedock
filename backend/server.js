@@ -16,6 +16,64 @@ if (!OMDB_API_KEY) {
 }
 const OMDB_BASE = 'https://www.omdbapi.com/';
 
+function normalizeSearchKey(value) {
+  return String(value || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
+function buildSearchVariants(query) {
+  const rawQuery = String(query || '').trim();
+  const compactQuery = normalizeSearchKey(rawQuery);
+  const variants = [];
+  const pushVariant = value => {
+    if (value && !variants.includes(value)) {
+      variants.push(value);
+    }
+  };
+
+  pushVariant(rawQuery);
+
+  if (compactQuery && compactQuery !== normalizeSearchKey(rawQuery)) {
+    pushVariant(compactQuery);
+  }
+
+  if (compactQuery && compactQuery.length <= 6 && /^[a-z0-9]+$/i.test(compactQuery)) {
+    pushVariant(compactQuery.split('').join('.'));
+    pushVariant(compactQuery.split('').join(' '));
+  }
+
+  return variants;
+}
+
+function scoreSearchResult(query, movie, variantRank) {
+  const normalizedQuery = normalizeSearchKey(query);
+  const normalizedTitle = normalizeSearchKey(movie.Title);
+  const startsWithQuery = normalizedTitle.startsWith(normalizedQuery);
+  const containsQuery = normalizedTitle.includes(normalizedQuery);
+  const titleHasVariantPunctuation = /[.\-:]/.test(movie.Title);
+  const score = {
+    variantRank,
+    exactTitle: normalizedTitle === normalizedQuery ? 0 : 1,
+    titleMatch: startsWithQuery ? 0 : containsQuery ? 1 : 2,
+    typePenalty: movie.Type === 'series' ? 1 : 0,
+    punctuationBonus: titleHasVariantPunctuation && normalizedQuery.length <= 6 ? -1 : 0,
+    lengthDelta: Math.abs(normalizedTitle.length - normalizedQuery.length),
+    titleLength: movie.Title.length
+  };
+
+  return score;
+}
+
+function compareSearchScores(a, b) {
+  return a.variantRank - b.variantRank ||
+    a.exactTitle - b.exactTitle ||
+    a.titleMatch - b.titleMatch ||
+    a.typePenalty - b.typePenalty ||
+    a.punctuationBonus - b.punctuationBonus ||
+    a.lengthDelta - b.lengthDelta ||
+    a.titleLength - b.titleLength ||
+    a.movie.Title.localeCompare(b.movie.Title);
+}
+
 // OMDB Search Endpoint
 app.get('/api/omdb/search', async (req, res) => {
   try {
@@ -31,18 +89,48 @@ app.get('/api/omdb/search', async (req, res) => {
       return res.status(500).json({ error: 'OMDB_API_KEY is required' });
     }
 
-    const params = new URLSearchParams({
-      apikey: activeKey,
-      s: searchQuery,
-      ...(type && { type }),
-      ...(year && { y: year }),
-      ...(y && { y }),
-      ...(page && { page })
-    });
+    const variants = buildSearchVariants(searchQuery);
+    const collected = [];
 
-    const response = await fetch(`${OMDB_BASE}?${params.toString()}`);
-    const data = await response.json();
-    res.json(data);
+    for (let variantRank = 0; variantRank < variants.length; variantRank++) {
+      const variant = variants[variantRank];
+      const params = new URLSearchParams({
+        apikey: activeKey,
+        s: variant,
+        ...(type && { type }),
+        ...(year && { y: year }),
+        ...(y && { y }),
+        ...(page && { page })
+      });
+
+      const response = await fetch(`${OMDB_BASE}?${params.toString()}`);
+      const data = await response.json();
+      if (data && Array.isArray(data.Search)) {
+        data.Search.forEach(movie => {
+          if (movie && movie.imdbID) {
+            collected.push({ movie, score: scoreSearchResult(searchQuery, movie, variantRank) });
+          }
+        });
+      }
+    }
+
+    const merged = new Map();
+    for (const entry of collected) {
+      const existing = merged.get(entry.movie.imdbID);
+      if (!existing || compareSearchScores(entry, existing) < 0) {
+        merged.set(entry.movie.imdbID, entry);
+      }
+    }
+
+    const Search = [...merged.values()]
+      .sort(compareSearchScores)
+      .map(entry => entry.movie);
+
+    if (!Search.length) {
+      return res.json({ Response: 'False', Error: 'Movie not found!' });
+    }
+
+    res.json({ Search, totalResults: String(Search.length), Response: 'True' });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

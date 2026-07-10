@@ -125,55 +125,58 @@
     return editDistance(normalized, "movie") <= 2 || editDistance(normalized, "movies") <= 2;
   }
 
-  function getFallbackMovieTitles(){
-    return [
-      ...MOVIE_INDUSTRIES.Hollywood,
-      ...MOVIE_GENRES.Action.slice(0, 3),
-      ...MOVIE_GENRES.Drama.slice(0, 3)
-    ];
+  function rankAndDedupeResults(query, movies){
+    const seen = new Set();
+    return movies
+      .filter(movie => movie && movie.imdbID && !seen.has(movie.imdbID) && seen.add(movie.imdbID))
+      .map(movie => ({ movie, score: scoreResult(query, movie) }))
+      .sort((a, b) => compareResultScores(a.score, b.score))
+      .map(entry => entry.movie);
   }
 
-  function getCuratedTitlePool(){
-    return [...new Set([
-      ...Object.values(MOVIE_GENRES).flat(),
-      ...Object.values(SERIES_GENRES).flat(),
-      ...Object.values(MOVIE_INDUSTRIES).flat()
-    ])];
-  }
-
-  function titleSearchKeys(title){
-    const rawTokens = String(title || "").toLowerCase().match(/[a-z0-9]+/g) || [];
-    const tokens = rawTokens.filter(token => !["the", "a", "an", "and", "of", "to", "in", "for", "on"].includes(token));
-    const compact = normalizeSearchKey(title);
-    const joinedTokens = normalizeSearchKey(tokens.join(""));
-    const acronym = normalizeSearchKey(tokens.map(token => token[0]).join(""));
-    const firstToken = normalizeSearchKey(tokens[0] || rawTokens[0] || "");
-    return [...new Set([compact, joinedTokens, acronym, firstToken].filter(Boolean))];
-  }
-
-  function scoreTitleMatch(query, title){
+  function scoreResult(query, movie){
     const normalizedQuery = normalizeSearchKey(query);
-    if(!normalizedQuery) return Infinity;
-    let best = Infinity;
-    for(const key of titleSearchKeys(title)){
-      if(key.includes(normalizedQuery) || normalizedQuery.includes(key)){
-        return 0;
+    const normalizedTitle = normalizeSearchKey(movie.Title);
+    const exactTitle = normalizedTitle === normalizedQuery ? 0 : 1;
+    const startsWithQuery = normalizedTitle.startsWith(normalizedQuery) ? 0 : 1;
+    const containsQuery = normalizedTitle.includes(normalizedQuery) ? 0 : 1;
+    const movieTypePenalty = movie.Type === "series" ? 1 : 0;
+    const punctuationBonus = /[.\-:]/.test(movie.Title) && normalizedQuery.length <= 6 ? -1 : 0;
+    return { exactTitle, startsWithQuery, containsQuery, movieTypePenalty, punctuationBonus, titleLength: movie.Title.length };
+  }
+
+  function compareResultScores(a, b){
+    return a.exactTitle - b.exactTitle ||
+      a.startsWithQuery - b.startsWithQuery ||
+      a.containsQuery - b.containsQuery ||
+      a.movieTypePenalty - b.movieTypePenalty ||
+      a.punctuationBonus - b.punctuationBonus ||
+      a.titleLength - b.titleLength;
+  }
+
+  async function browseQueries(queries, label){
+    const resultsEl = document.getElementById("home-results");
+    document.getElementById("search-input").value = "";
+    const suggestionsEl = document.getElementById("suggestions");
+    if(suggestionsEl) suggestionsEl.classList.remove("show");
+    document.getElementById("results-title").textContent = label;
+    document.getElementById("results-tally").textContent = "";
+    resultsEl.innerHTML = spinnerBlock("Loading...");
+    try{
+      const settled = await Promise.all(queries.map(async query => {
+        const response = await omdbSearch(query);
+        return Array.isArray(response.Search) ? response.Search : [];
+      }));
+      const merged = settled.flat().map(movie => ({...movie, addedAt: Date.now()}));
+      currentResults = rankAndDedupeResults(label, merged);
+      if(!currentResults.length){
+        resultsEl.innerHTML = emptyBlock("No results", "Try a different category.", true);
+        return;
       }
-      best = Math.min(best, editDistance(normalizedQuery, key));
+      renderHomeGrid();
+    }catch(e){
+      resultsEl.innerHTML = emptyBlock("Error loading", "Please try again.", true);
     }
-    return best;
-  }
-
-  function findCuratedTitleMatches(query, limit = 6){
-    const normalizedQuery = normalizeSearchKey(query);
-    if(!normalizedQuery) return [];
-    const maxDistance = Math.max(1, Math.min(3, Math.ceil(normalizedQuery.length / 3)));
-    return getCuratedTitlePool()
-      .map(title => ({ title, score: scoreTitleMatch(normalizedQuery, title) }))
-      .filter(entry => entry.score <= maxDistance)
-      .sort((a, b) => a.score - b.score || a.title.length - b.title.length || a.title.localeCompare(b.title))
-      .slice(0, limit)
-      .map(entry => entry.title);
   }
 
   /* ============ THEME ============ */
@@ -475,9 +478,8 @@
   }
 
   async function renderTrendingHome(){
-    document.getElementById("results-title").textContent = "Trending";
-    document.getElementById("home-results").innerHTML = spinnerBlock("Finding movies...");
     renderStats();
+    await browseQueries(["movie", "film", "series"], "Trending");
   }
 
   function renderWatchlist(){
@@ -544,22 +546,12 @@
     document.getElementById("home-results").innerHTML = spinnerBlock("Searching...");
     try{
       const res = await omdbSearch(query);
-      const results = (res.Search || []).map(m => ({...m, addedAt: Date.now()}));
+      const searchResults = (res.Search || []).map(m => ({...m, addedAt: Date.now()}));
+      const results = rankAndDedupeResults(query, searchResults);
       if(results.length){
         currentResults = results;
         document.getElementById("results-title").textContent = `Results for "${query}"`;
         renderHomeGrid();
-        return;
-      }
-
-      const fuzzyTitles = findCuratedTitleMatches(query);
-      if(fuzzyTitles.length){
-        await browseCategory(fuzzyTitles, `Did you mean "${query}"?`);
-        return;
-      }
-
-      if(isGenericMovieQuery(query)){
-        await browseCategory(getFallbackMovieTitles(), `Popular movies for "${query}"`);
         return;
       }
 
@@ -695,17 +687,17 @@
       setActiveDashboard(key);
       closeAllDropdowns();
       if(key === "home") renderTrendingHome();
+      if(key === "webseries") browseQueries(["series", "web series", "tv series"], "Web Series");
+      if(key === "anime") browseQueries(["anime", "animation", "cartoon"], "Anime");
     }
     else if(e.target.closest(".dash-dropdown button[data-genre]")){
       const genre = e.target.closest("button").dataset.genre;
-      const titles = MOVIE_GENRES[genre] || [];
-      browseCategory(titles, `${genre} Movies`);
+      browseQueries([genre, `${genre} movie`, `${genre} film`], `${genre} Movies`);
       closeAllDropdowns();
     }
     else if(e.target.closest(".dash-dropdown button[data-industry]")){
       const industry = e.target.closest("button").dataset.industry;
-      const titles = MOVIE_INDUSTRIES[industry] || [];
-      browseCategory(titles, `${industry} Films`);
+      browseQueries([industry, `${industry} movie`, `${industry} film`], `${industry} Films`);
       closeAllDropdowns();
     }
     else if(e.target.closest(".dash-dropdown button[data-year]")){
@@ -720,29 +712,6 @@
       closeAllDropdowns();
     }
   });
-
-  async function browseCategory(titles, label){
-    const resultsEl = document.getElementById("home-results");
-    document.getElementById("search-input").value = "";
-    suggestBox.classList.remove("show");
-    document.getElementById("results-title").textContent = label;
-    document.getElementById("results-tally").textContent = "";
-    resultsEl.innerHTML = spinnerBlock("Loading...");
-    try{
-      const settled = await Promise.all(titles.map(async t => {
-        try{ const d = await omdbDetails2ByTitle(t); return d && d.Response !== "False" ? d : null; }
-        catch(e){ return null; }
-      }));
-      currentResults = settled.filter(Boolean);
-      if(!currentResults.length){
-        resultsEl.innerHTML = emptyBlock("No results", "Try a different category.", true);
-        return;
-      }
-      renderHomeGrid();
-    }catch(e){
-      resultsEl.innerHTML = emptyBlock("Error loading", "Please try again.", true);
-    }
-  }
 
   // Lists
   document.getElementById("new-list-btn").addEventListener("click", () => {
